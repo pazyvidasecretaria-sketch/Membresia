@@ -140,7 +140,10 @@ body{font-family:system-ui,sans-serif;font-size:13px;color:#1a1a1a;background:#f
 
 <div class="sync-bar">
   <span><span class="sync-dot orange" id="sync-dot"></span><span id="sync-txt">Conectando...</span></span>
-  <button class="btn-s" style="padding:3px 9px;font-size:11px" onclick="cargarDatos()"><i class="ti ti-refresh"></i> Sincronizar</button>
+  <div style="display:flex;gap:6px;align-items:center">
+    <button class="btn-s" style="padding:3px 9px;font-size:11px" onclick="cargarDatos()"><i class="ti ti-refresh"></i> Sincronizar</button>
+    <button id="btn-gcal" class="btn-s" style="padding:3px 9px;font-size:11px;color:#1557b0;border-color:#1557b0" onclick="gcalSignIn()"><i class="ti ti-calendar"></i> 🎂 Sync Cumpleaños</button>
+  </div>
 </div>
 
 <div class="nav">
@@ -612,6 +615,61 @@ function renderStats() {
 }
 
 cargarDatos();
+
+// ── Google Calendar – Cumpleaños ──────────────────────────────────────────
+const GCAL_CLIENT_ID = '763863171018-n4pr8er8bgm35ec9sr2gedf5cbseu1jv.apps.googleusercontent.com';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+let gcalToken = null;
+
+function gcalSignIn() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_CLIENT_ID,
+    scope: GCAL_SCOPE,
+    callback: (resp) => {
+      if (resp.error) { alert('Error al autenticar con Google: ' + resp.error); return; }
+      gcalToken = resp.access_token;
+      sincronizarCumpleanos();
+    }
+  });
+  client.requestAccessToken();
+}
+
+async function sincronizarCumpleanos() {
+  const btn = document.getElementById('btn-gcal');
+  if (btn) btn.disabled = true;
+  const miembros = DB.filter(m => m.fnac && m.fnac.trim() !== '');
+  let ok = 0, err = 0;
+  for (const m of miembros) {
+    try {
+      const parts = m.fnac.trim().split(/[-\/]/);
+      if (parts.length < 3) continue;
+      // Accept both DD/MM/YYYY and YYYY-MM-DD
+      let d, mo, y;
+      if (parts[0].length === 4) { [y, mo, d] = parts; }
+      else { [d, mo, y] = parts; }
+      const year = parseInt(y), month = parseInt(mo), day = parseInt(d);
+      if (!year || !month || !day) continue;
+      const nombre = `🎂 Cumpleaños de ${m.nombre} ${m.apellidos||''}`.trim();
+      const evento = {
+        summary: nombre,
+        recurrence: ['RRULE:FREQ=YEARLY'],
+        start: { date: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}` },
+        end:   { date: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}` },
+        reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 480 }] }
+      };
+      const resp = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + gcalToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify(evento)
+      });
+      if (resp.ok) ok++; else err++;
+    } catch(e) { err++; }
+  }
+  if (btn) btn.disabled = false;
+  const msg = `✅ Sincronización completada:\n• ${ok} cumpleaños añadidos al calendario\n${err ? '• ' + err + ' errores' : ''}`;
+  alert(msg);
+}
 </script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
