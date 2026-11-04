@@ -195,6 +195,12 @@ body{font-family:system-ui,sans-serif;font-size:13px;color:#1a1a1a;background:#f
       <option value="jovenes">Jóvenes (18-29)</option>
       <option value="adultos">Adultos (30+)</option>
     </select>
+    <select id="festado" onchange="renderLista()">
+      <option value="activo">Solo activos</option>
+      <option value="">Todos (incl. inactivos)</option>
+      <option value="inactivo">Inactivos</option>
+      <option value="ex">Ex miembros</option>
+    </select>
   </div>
   <div id="lista"></div>
   <div id="form-area"></div>
@@ -236,7 +242,7 @@ body{font-family:system-ui,sans-serif;font-size:13px;color:#1a1a1a;background:#f
 
 <script>
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyFWewt2k4AihTOEQ4VH_40Fe0g1CtyBadkzUPEzBy3JT8-3ePj8oCNNOEVbwGNN4B3/exec';
-const COLS = ['id','nombre','apellidos','dni','fnac','sexo','civil','tel','email','dir','fconv','fbaut_ok','fbaut','ministerio','cargo','posicion','proc','falta','notas'];
+const COLS = ['id','nombre','apellidos','dni','fnac','sexo','civil','tel','email','dir','fconv','fbaut_ok','fbaut','ministerio','cargo','posicion','proc','falta','notas','estado'];
 const CARGOS_BASE = ['Pastor/a','Diácono/a','Anciano/a','Líder de célula','Líder de jóvenes','Líder de niños','Coordinador/a','Miembro activo'];
 const FRANJAS = ['ninos','adolescentes','jovenes','adultos'];
 const FRANJA_LABEL = {ninos:'Niños\n0-12', adolescentes:'Adolesc.\n13-17', jovenes:'Jóvenes\n18-29', adultos:'Adultos\n30+'};
@@ -302,6 +308,7 @@ async function guardarEnSheets() {
 
 function age(d) {
   if(!d || d==='') return null;
+  if(/^\d{1,2}[\/\-]\d{1,2}$/.test(d.trim())) return null;
   const b=new Date(d), n=new Date();
   if(isNaN(b.getTime())) return null;
   let a=n.getFullYear()-b.getFullYear();
@@ -360,12 +367,14 @@ function cardHTML(m) {
 }
 
 function renderPanel() {
-  const t=DB.length;
-  const mv=DB.filter(x=>x.sexo==='Varón').length;
-  const mf=DB.filter(x=>x.sexo==='Mujer').length;
-  const b=DB.filter(esBautizado).length;
+  const activos=DB.filter(x=>!x.estado||x.estado==='activo');
+  const t=activos.length;
+  const mv=activos.filter(x=>x.sexo==='Varón').length;
+  const mf=activos.filter(x=>x.sexo==='Mujer').length;
+  const b=activos.filter(esBautizado).length;
+  const inact=DB.filter(x=>x.estado==='inactivo'||x.estado==='ex').length;
   document.getElementById('sgrid').innerHTML=`
-    <div class="sc"><div class="sc-lbl">Total miembros</div><div class="sc-val">${t}</div></div>
+    <div class="sc"><div class="sc-lbl">Miembros activos</div><div class="sc-val">${t}</div>${inact?`<div class="sc-sub">${inact} inactivo${inact>1?'s':''}</div>`:''}</div>
     <div class="sc"><div class="sc-lbl">Varones</div><div class="sc-val">${mv}</div><div class="sc-sub">${t?Math.round(mv/t*100)+'%':''}</div></div>
     <div class="sc"><div class="sc-lbl">Mujeres</div><div class="sc-val">${mf}</div><div class="sc-sub">${t?Math.round(mf/t*100)+'%':''}</div></div>
     <div class="sc"><div class="sc-lbl">Bautizados</div><div class="sc-val">${b}</div><div class="sc-sub">${t?Math.round(b/t*100)+'%':''}</div></div>`;
@@ -380,7 +389,11 @@ function renderLista() {
   const fb=(document.getElementById('fb')||{}).value||'';
   const fm=(document.getElementById('fm')||{}).value||'';
   const ff=(document.getElementById('ffranja')||{}).value||'';
+  const fe=(document.getElementById('festado')||{}).value;
+  const estadoFiltro = fe === undefined ? 'activo' : fe;
   let list=DB.filter(m=>{
+    const est = m.estado || 'activo';
+    if(estadoFiltro && est !== estadoFiltro) return false;
     if(q&&!((m.nombre+' '+m.apellidos).toLowerCase().includes(q)||(m.dni||'').toLowerCase().includes(q))) return false;
     if(fs&&m.sexo!==fs) return false;
     if(fb==='si'&&!esBautizado(m)) return false;
@@ -438,9 +451,10 @@ function abrirForm(id) {
         <div class="fg"><span class="flbl">Nombre *</span><input class="finp" id="fn" value="${v('nombre')}" placeholder="Nombre"></div>
         <div class="fg"><span class="flbl">Apellidos *</span><input class="finp" id="fa" value="${v('apellidos')}" placeholder="Apellidos"></div>
         <div class="fg"><span class="flbl">DNI / NIE</span><input class="finp" id="fdni" value="${v('dni')}" placeholder="12345678A"></div>
-        <div class="fg"><span class="flbl">Fecha de nacimiento</span><input class="finp" type="date" id="ffn" value="${v('fnac')}"></div>
+        <div class="fg"><span class="flbl">Fecha de nacimiento</span><input class="finp" type="text" id="ffn" value="${v('fnac')}" placeholder="DD/MM/YYYY o DD/MM"></div>
         <div class="fg"><span class="flbl">Sexo</span><select class="finp" id="fsx"><option value="">—</option><option ${v('sexo')==='Varón'?'selected':''} value="Varón">Varón</option><option ${v('sexo')==='Mujer'?'selected':''} value="Mujer">Mujer</option></select></div>
         <div class="fg"><span class="flbl">Estado civil</span><select class="finp" id="fec"><option value="">—</option>${['Soltero/a','Casado/a','Viudo/a','Divorciado/a'].map(x=>`<option ${v('civil')===x?'selected':''}>${x}</option>`).join('')}</select></div>
+        <div class="fg"><span class="flbl">Estado en la iglesia</span><select class="finp" id="festado-m"><option value="activo" ${ (!v('estado')||v('estado')==='activo')?'selected':'' }>Activo</option><option value="inactivo" ${v('estado')==='inactivo'?'selected':''}>Inactivo</option><option value="ex" ${v('estado')==='ex'?'selected':''}>Ex miembro</option></select></div>
         <div class="fg"><span class="flbl">Teléfono</span><input class="finp" id="ftel" value="${v('tel')}" placeholder="600 000 000"></div>
         <div class="fg"><span class="flbl">Email</span><input class="finp" id="femail" value="${v('email')}" placeholder="correo@ejemplo.com"></div>
         <div class="fg full"><span class="flbl">Dirección</span><input class="finp" id="fdir" value="${v('dir')}" placeholder="Calle, número — Alcalá de Henares"></div>
@@ -479,9 +493,14 @@ function gv(id) { return (document.getElementById(id)?.value||'').trim(); }
 async function guardar(id) {
   const nombre=gv('fn'), apellidos=gv('fa');
   if(!nombre||!apellidos){alert('Nombre y apellidos son obligatorios.');return;}
+  if(!id){
+    const dup=DB.find(x=>x.nombre.trim().toLowerCase()===nombre.toLowerCase()&&(x.apellidos||'').trim().toLowerCase()===apellidos.toLowerCase());
+    if(dup&&!confirm(`⚠️ Ya existe un miembro con el nombre "${dup.nombre} ${dup.apellidos||''}".\n¿Deseas crear otro de todas formas?`))return;
+  }
   const bautOk = document.getElementById('fbaut-ok')?.checked ? 'true' : '';
   const cargo = getCargoValue();
-  const d={nombre,apellidos,dni:gv('fdni'),fnac:gv('ffn'),sexo:gv('fsx'),civil:gv('fec'),tel:gv('ftel'),email:gv('femail'),dir:gv('fdir'),fconv:gv('fconv'),fbaut_ok:bautOk,fbaut:gv('fbaut'),ministerio:gv('fmin'),cargo,posicion:gv('fpos'),proc:gv('fproc'),falta:gv('falta'),notas:gv('fnot')};
+  const estado = document.getElementById('festado-m')?.value || 'activo';
+  const d={nombre,apellidos,dni:gv('fdni'),fnac:gv('ffn'),sexo:gv('fsx'),civil:gv('fec'),tel:gv('ftel'),email:gv('femail'),dir:gv('fdir'),fconv:gv('fconv'),fbaut_ok:bautOk,fbaut:gv('fbaut'),ministerio:gv('fmin'),cargo,posicion:gv('fpos'),proc:gv('fproc'),falta:gv('falta'),notas:gv('fnot'),estado};
   if(id){const i=DB.findIndex(x=>x.id===id);DB[i]={...DB[i],...d};}
   else{d.id=Date.now();DB.push(d);}
   cerrarForm(); renderLista(); renderPanel();
@@ -642,13 +661,14 @@ async function sincronizarCumpleanos() {
   for (const m of miembros) {
     try {
       const parts = m.fnac.trim().split(/[-\/]/);
-      if (parts.length < 3) continue;
-      // Accept both DD/MM/YYYY and YYYY-MM-DD
+      if (parts.length < 2) continue;
+      // Accept DD/MM, DD/MM/YYYY and YYYY-MM-DD
       let d, mo, y;
       if (parts[0].length === 4) { [y, mo, d] = parts; }
       else { [d, mo, y] = parts; }
-      const year = parseInt(y), month = parseInt(mo), day = parseInt(d);
-      if (!year || !month || !day) continue;
+      const year = parseInt(y) || 2000;
+      const month = parseInt(mo), day = parseInt(d);
+      if (!month || !day) continue;
       const nombre = `🎂 Cumpleaños de ${m.nombre} ${m.apellidos||''}`.trim();
       const evento = {
         summary: nombre,
@@ -673,3 +693,4 @@ async function sincronizarCumpleanos() {
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
+
